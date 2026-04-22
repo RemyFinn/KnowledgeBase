@@ -16,6 +16,7 @@ dependencies = [
     "modelscope>=1.36.1",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
+    "path>=17.1.1",
     "pymilvus>=2.6.12",
     "pymilvus-model>=0.3.2",
     "pymongo>=4.17.0",
