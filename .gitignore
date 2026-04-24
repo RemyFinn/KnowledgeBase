@@ -41,6 +41,8 @@ logs/
 .env
 
 # Large document files (not for version control)
+doc
+output
 #doc/*.pdf
 #doc/*.zip
 #doc/*.rar
