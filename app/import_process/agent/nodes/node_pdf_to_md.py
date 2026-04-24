@@ -1,10 +1,13 @@
+import os
+import shutil
 import sys
+import zipfile
 
 import requests
 import time
 
 from app.core.logger import logger
-from app.import_process.agent.state import ImportGraphState
+from app.import_process.agent.state import ImportGraphState, create_default_state
 from app.utils.task_utils import add_running_task
 from app.utils.path_util import PROJECT_ROOT
 from pathlib import Path
@@ -64,7 +67,7 @@ def step_2_upload_and_poll(pdf_path_obj):
         "files": [
             {"name": f"{pdf_path_obj.name}"}
         ],
-        "model_version":"vlm"
+        "model_version": "vlm"
     }
 
     response = requests.post(url, headers=header, json=data)
@@ -79,7 +82,7 @@ def step_2_upload_and_poll(pdf_path_obj):
     # 注意： 不能直接使用Put，大概率会报错。 原因：电脑开了各种代理，put的请求头，添加一些额外的参数头，将文件真的转存在第三方文件存储服务器
     # 文件存储服务器都比较严格，拒绝存储，报错！get post 宽进宽出 put严进严出
     http_session = requests.Session()
-    http_session.trust_env = False # 1.禁止走代理 | 2.复用请求对象
+    http_session.trust_env = False  # 1.禁止走代理 | 2.复用请求对象
     try:
         with open(pdf_path_obj, 'rb') as f:
             file_data = f.read()
@@ -97,8 +100,8 @@ def step_2_upload_and_poll(pdf_path_obj):
     # 设计一个循环3-5秒获取一次，最多等待10分钟（600s） -> 600页pdf
     url = f"{mineru_config.base_url}/extract-results/batch/{batch_id}"  # "上一步批量提交返回的 batch_id"
     timeout_seconds = 600  # 官网 1s = 1页pdf
-    poll_interval = 3 #间隔时间是3s
-    start_time = time.time() #进入的起始时间
+    poll_interval = 3  # 间隔时间是3s
+    start_time = time.time()  # 进入的起始时间
 
     while True:
         # 3.1 超时判断 不能站在第一次角度，要站在宏观的角度
@@ -118,28 +121,103 @@ def step_2_upload_and_poll(pdf_path_obj):
                 continue
             raise RuntimeError(f"[step_2_upload_and_poll] minerU解析接口结果失败，返回的状态码为{res.status_code}！")
 
-        json_data = res.json() # 获取本次结果
+        json_data = res.json()  # 获取本次结果
         if json_data['code'] != 0:
             # != 0 大概率是token过期 或者 额度用尽等等
-            raise RuntimeError(f"[step_2_upload_and_poll] minerU解析接口结果失败，返回的错误为： {json_data['code']}信息{json_data['msg']}！")
+            raise RuntimeError(
+                f"[step_2_upload_and_poll] minerU解析接口结果失败，返回的错误为： {json_data['code']}信息{json_data['msg']}！")
 
         # 判断解析状态
-        extract_result = json_data['data']['extract_result']
+        extract_result = json_data['data']['extract_result'][0]
         if extract_result['state'] == 'done':
             # 解析完成可以获取结果
             full_zip_url = extract_result['full_zip_url']
-            logger.info(f"[step_2_upload_and_poll] 解析完成，耗时：{time.time() - start_time}s，获取结果地址为：{full_zip_url}")
+            logger.info(
+                f"[step_2_upload_and_poll] 解析完成，耗时：{time.time() - start_time}s，获取结果地址为：{full_zip_url}")
             return full_zip_url
         else:
             # 还没解析完
             time.sleep(poll_interval)
 
 
+def step_3_download_and_extract(zip_url, local_dir_obj, stem) -> str:
+    """
+    下载指定的md.zip文件，并解压，返回解压后的md文件地址
+    :param zip_url: 要下载的地址
+    :param local_dir_obj: 存储的文件夹
+    :param stem: pdf的文件名
+    :return str: 返回md文件的地址
+    """
 
+    # 1.下载zip文件 response响应体
+    response = requests.get(zip_url)
 
-def step_3_download_and_extract(zip_url, local_dir_obj, stems):
-    pass
+    if response.status_code != 200:
+        logger.error(f"[step_3_download_and_extract] 下载文件失败，请检查输入文件路径！")
+        raise RuntimeError(f"[step_3_download_and_extract] 下载文件失败，请检查输入文件路径！")
 
+    # 2.把响应体的zip文件保存到本地
+    zip_save_path = local_dir_obj / f"{stem}_result.zip"
+    with open(zip_save_path, 'wb') as f:
+        f.write(response.content)
+    logger.info(f"[step_3_download_and_extract] 下载文件成功，保存路径为：{zip_save_path}")
+
+    # 3.清空下旧目录（删除上一次处理的文件目录）
+    # 先清空文件内容，因为两次解压的文件数量可能不一致，会保留旧数据
+    extract_target_dir = local_dir_obj / stem
+    if extract_target_dir.exists():
+        # 递归进行目录内容删除/本身也会被删除
+        shutil.rmtree(extract_target_dir)
+    # 创建一个新目录
+    extract_target_dir.mkdir(parents=True, exist_ok=True)
+
+    # 4.解压zip文件
+    # 对zip文件进行解压
+    # zipfile.ZipFile(zip_save_path, mode='r') as zip_file_object 创建一个zip文件对象，只能读取，解压
+    with zipfile.ZipFile(zip_save_path, mode='r') as zip_file_object:
+        # 调用对象的extractall方法进行解压  参数: 解压到的目录  output / xxx
+        zip_file_object.extractall(extract_target_dir)
+
+    # 5.返回md文件的地址
+    # 解压后得到文件的文件名可能叫 文件.md 低版本也可能叫 full.md
+    md_file_list = list(extract_target_dir.rglob('*.md'))
+
+    if not md_file_list:
+        logger.error(f"[step_3_download_and_extract] 解压文件失败，请检查输入文件路径！")
+        raise RuntimeError(f"[step_3_download_and_extract] 解压文件失败，请检查输入文件路径！")
+
+    target_md_file = None # 存储最终的md文件
+
+    # 检查有没有原文件名的md
+    for md_file in md_file_list:
+        # stem 文件名 xxx
+        if md_file.name == stem + ".md":
+            target_md_file = md_file
+            break
+    # 检查有没有full.md
+    if not target_md_file:
+        for md_file in md_file_list:
+            # stem 文件名 xxx
+            if md_file.name.lower() == "full.md":
+                target_md_file = md_file
+                break
+
+    # 实在没有我就获取第一个就行
+    if not target_md_file:
+        target_md_file = md_file_list[0]
+
+    # md文件名 xxx.md full.md 不知道.md
+    # 统一改成 原文件名（stem）.md
+    if target_md_file.stem != stem:
+        # 进行重命名
+        # target_md_file.with_name(stem + ".md") 修改path对象 （不涉及文件操作） 返回修改后的path对象
+        # target_md_file.rename 修改磁盘中的文件名称 返回新的path
+        target_md_file = target_md_file.rename(target_md_file.with_name(stem + ".md"))
+
+    # 最终的md文件获取绝对路径，并且返回字符串类型
+    final_md_str_path = str(target_md_file.resolve())
+    logger.info(f"[step_3_download_and_extract] 完成md解压文件成功，保存路径为：{final_md_str_path}")
+    return final_md_str_path
 
 def node_pdf_to_md(state: ImportGraphState) -> ImportGraphState:
     """
@@ -195,3 +273,25 @@ def node_pdf_to_md(state: ImportGraphState) -> ImportGraphState:
         add_running_task(state['task_id'], function_name)
 
     return state
+
+
+if __name__ == "__main__":
+    # 单元测试：验证PDF转MD全流程
+    logger.info("===== 开始node_pdf_to_md节点单元测试 =====")
+
+    from app.utils.path_util import PROJECT_ROOT
+    logger.info(f"测试获取根地址：{PROJECT_ROOT}")
+
+    test_pdf_name = os.path.join("doc", "hak180产品安全手册.pdf")
+    test_pdf_path = os.path.join(PROJECT_ROOT, test_pdf_name)
+
+    # 构造测试状态
+    test_state = create_default_state(
+        task_id="test_pdf2md_task_001",
+        pdf_path=test_pdf_path,
+        local_dir=os.path.join(PROJECT_ROOT, "output")
+    )
+
+    node_pdf_to_md(test_state)
+
+    logger.info("===== 结束node_pdf_to_md节点单元测试 =====")
