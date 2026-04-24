@@ -1,10 +1,14 @@
 import sys
 
+import requests
+import time
+
 from app.core.logger import logger
 from app.import_process.agent.state import ImportGraphState
 from app.utils.task_utils import add_running_task
 from app.utils.path_util import PROJECT_ROOT
 from pathlib import Path
+from app.conf.mineru_config import MineruConfig, mineru_config
 
 
 def step_1_validate_path(state):
@@ -42,7 +46,95 @@ def step_1_validate_path(state):
 
 
 def step_2_upload_and_poll(pdf_path_obj):
-    pass
+    """
+        讲pdf文件用minerU解析，并且获取md对应的下载url地址
+        :param pdf_path_obj: 上传解析pdf文件的path对象
+        :return str: url ，minerU解析后md文件zip压缩包的下载地址
+    """
+
+    #  1.申请上传解析的地址
+    # 前置准备和参数： url api | token | 准备一个固定格式的请求头
+    token = mineru_config.api_key
+    url = f"{mineru_config.base_url}/file-urls/batch"
+    header = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    data = {
+        "files": [
+            {"name": f"{pdf_path_obj.name}"}
+        ],
+        "model_version":"vlm"
+    }
+
+    response = requests.post(url, headers=header, json=data)
+    if response.status_code != 200 or response.json()['code'] != 0:
+        logger.error(f"[step_2_upload_and_poll] 获取minerU解析接口地址失败，请检查输入文件路径！")
+        raise RuntimeError(f"[step_2_upload_and_poll] 请求minerU解析接口失败，请检查输入文件路径！")
+    uploaded_url = response.json()['data']['file_urls'][0]  # 上这个地址上传文件
+    batch_id = response.json()['data']['batch_id']  # 处理id，后续根据这个id获取结果
+
+    #  2.将文件上传到对应的解析地址
+    # 使用Put请求，讲pdf_path_obj文件上传到uploaded_url地址即可
+    # 注意： 不能直接使用Put，大概率会报错。 原因：电脑开了各种代理，put的请求头，添加一些额外的参数头，将文件真的转存在第三方文件存储服务器
+    # 文件存储服务器都比较严格，拒绝存储，报错！get post 宽进宽出 put严进严出
+    http_session = requests.Session()
+    http_session.trust_env = False # 1.禁止走代理 | 2.复用请求对象
+    try:
+        with open(pdf_path_obj, 'rb') as f:
+            file_data = f.read()
+        upload_response = http_session.put(uploaded_url, data=file_data)
+        if upload_response.status_code != 200:
+            logger.error(f"[step_2_upload_and_poll] 上传文件到minerU失败，请检查输入文件路径！")
+            raise RuntimeError(f"[step_2_upload_and_poll] 上传文件到minerU失败，请检查输入文件路径！")
+    except Exception as e:
+        logger.error(f"[step_2_upload_and_poll] 上传文件到minerU失败，请检查输入文件路径！")
+        raise RuntimeError(f"[step_2_upload_and_poll] 上传文件到minerU失败，请检查输入文件路径！")
+    finally:
+        http_session.close()
+    #  3.轮询获取解析结果
+    # 循环获取，确保获取到结果，再往后执行
+    # 设计一个循环3-5秒获取一次，最多等待10分钟（600s） -> 600页pdf
+    url = f"{mineru_config.base_url}/extract-results/batch/{batch_id}"  # "上一步批量提交返回的 batch_id"
+    timeout_seconds = 600  # 官网 1s = 1页pdf
+    poll_interval = 3 #间隔时间是3s
+    start_time = time.time() #进入的起始时间
+
+    while True:
+        # 3.1 超时判断 不能站在第一次角度，要站在宏观的角度
+        if time.time() - start_time > timeout_seconds:
+            logger.error(f"[step_2_upload_and_poll] 请求minerU解析接口超时，请检查输入文件路径！")
+            raise RuntimeError(f"[step_2_upload_and_poll] 请求minerU解析接口超时，请检查输入文件路径！")
+
+        # 3.2 向指定的url地址获取本次解析的结果
+        res = requests.get(url, headers=header)
+
+        # 3.3 解析结果判断和获取zip_url
+        if res.status_code != 200:
+            # 5xx 给与机会 直到timeout 超时
+            # 抛出异常 1xxx 还是给机会 2xx 本次处理思路 => 333
+            if 500 <= res.status_code < 600:
+                time.sleep(poll_interval)
+                continue
+            raise RuntimeError(f"[step_2_upload_and_poll] minerU解析接口结果失败，返回的状态码为{res.status_code}！")
+
+        json_data = res.json() # 获取本次结果
+        if json_data['code'] != 0:
+            # != 0 大概率是token过期 或者 额度用尽等等
+            raise RuntimeError(f"[step_2_upload_and_poll] minerU解析接口结果失败，返回的错误为： {json_data['code']}信息{json_data['msg']}！")
+
+        # 判断解析状态
+        extract_result = json_data['data']['extract_result']
+        if extract_result['state'] == 'done':
+            # 解析完成可以获取结果
+            full_zip_url = extract_result['full_zip_url']
+            logger.info(f"[step_2_upload_and_poll] 解析完成，耗时：{time.time() - start_time}s，获取结果地址为：{full_zip_url}")
+            return full_zip_url
+        else:
+            # 还没解析完
+            time.sleep(poll_interval)
+
+
 
 
 def step_3_download_and_extract(zip_url, local_dir_obj, stems):
@@ -85,11 +177,11 @@ def node_pdf_to_md(state: ImportGraphState) -> ImportGraphState:
         # 4.下载zip包，并解析和提取（local_dir）
         # 参数：1.要下载的地址 2.local_dir_obj 解压的文件夹 3. 文件名 提取的文件名
         # 返回值：解压后md 文件的真实路径
-        md_path = step_3_download_and_extract(zip_url, local_dir_obj, pdf_path_obj.stems)
+        md_path = step_3_download_and_extract(zip_url, local_dir_obj, pdf_path_obj.stem)
         # 5.把md_path地址进行赋值，读取md的文件内容 md_content赋值（文本内容）
         # 更新数据
         state["md_path"] = md_path
-        state["local_dir"] = local_dir_obj
+        state["local_dir"] = str(local_dir_obj)
         # md的内容读取，配置给md_content
         with open(md_path, "r", encoding="utf-8") as f:
             state["md_content"] = f.read()
