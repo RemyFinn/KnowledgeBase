@@ -17,6 +17,7 @@ def load_prompt(name: str, **kwargs) -> str:
         raise FileNotFoundError(f"提示词文件不存在：{prompt_path.absolute()}")
 
     # 3. 读取纯文本提示词（你的原有逻辑）
+    # str = f"xxx{key}xxx" f = format
     raw_prompt = prompt_path.read_text(encoding='utf-8')
 
     # 4. 核心：如果传了参数，渲染占位符；没传参，直接返回原文本
