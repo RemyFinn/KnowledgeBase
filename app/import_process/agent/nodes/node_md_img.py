@@ -127,7 +127,8 @@ def find_image_in_md_content(md_content, image_file, context_length: int = 100):
     # 定义正则表达式
     # r:不要对字符串中的反斜杠 \ 进行转义处理  ：r = "raw" = "原始" = "别转义
     # ?: 非贪婪匹配
-    pattern = re.compile(r"!\[.*?\]\(.*?" + image_file + ".*?\)")
+    pattern = re.compile(r"!\[.*?\]\(.*?" + image_file + r".*?\)")
+
 
     content = None # 存储图片多处使用，上下文不同! 本次暴力处理，获取第一个!
     # 查询符合位置
@@ -223,7 +224,7 @@ def step_3_generate_img_summaries(targets, stem):
         summaries[image_file] = summary
         logger.info(f"图片：{image_file}，总结结果：{summary}")
 
-    pass
+    return summaries
 
 
 def step_4_upload_images_and_replace_md(summaries, targets, md_content, stem):
@@ -236,8 +237,11 @@ def step_4_upload_images_and_replace_md(summaries, targets, md_content, stem):
       :param stem: 文件名
       :return: 新md
       """
+    logger.info(f"开始上传图片到MinIO，参数检查：summaries={len(summaries) if summaries else 0}个, targets={len(targets) if targets else 0}个, stem={stem}")
+    
     # 理解minio存储结果： 桶 / upload-images / 文件夹名字 / 图片对象.jpg
     minio_client = get_minio_client()
+    logger.info(f"MinIO客户端初始化成功，端点：{minio_config.endpoint}, 桶：{minio_config.bucket_name}")
     # 1.  删除minio中的对应文件的图片
     # 1.1 获取要删除的对象
     # Object object_name
@@ -294,7 +298,7 @@ def step_4_upload_images_and_replace_md(summaries, targets, md_content, stem):
         for image_file, (summary, url) in image_infos.items():
             # 使用正则
             # ![](/xxx/xx/image_file) -> ![无所谓](无所谓image_file无所谓)
-            rep = re.compile(r"!\[.*?\]\(.*?" + image_file + ".*?\)")
+            rep = re.compile(r"!\[.*?\]\(.*?" + image_file + r".*?\)")
             md_content = rep.sub(f"![{summary}]({url})", md_content)
         logger.info(f"已经完成md内容的替换，新的内容为:{md_content}")
     return md_content
@@ -378,7 +382,7 @@ if __name__ == "__main__":
     logger.info(f"本地测试 - 项目根目录：{PROJECT_ROOT}")
 
     # 测试MD文件路径（需手动将测试文件放入对应目录）
-    test_md_name = os.path.join(r"output\hak180产品安全手册", "hak180产品安全手册.md")
+    test_md_name = os.path.join("output", "hak180产品安全手册", "hak180产品安全手册.md")
     test_md_path = os.path.join(PROJECT_ROOT, test_md_name)
 
     # 校验测试文件是否存在
