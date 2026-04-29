@@ -3,7 +3,7 @@ version: '3.5'
 services:
   etcd:
     container_name: milvus-etcd
-    image: quay.io/coreos/etcd:v3.5.5
+    image: quay.io/coreos/etcd:v3.5.9
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
@@ -20,10 +20,10 @@ services:
 
   minio:
     container_name: milvus-minio
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
     environment:
       MINIO_ACCESS_KEY: minioadmin  # 内置账号，无需修改
-      MINIO_SECRET_KEY: minioadmin  # 内置密码，无需修改
+      MINIO_SECRET_KEY: minioadmin  # 内置账号，无需修改
     ports:
       - "9003:9001"  # 控制台端口：原9001→改为9003（避开占用）
       - "9002:9000"  # 数据端口：原9000→改为9002（避开占用）
