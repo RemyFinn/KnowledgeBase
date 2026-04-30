@@ -93,12 +93,11 @@ def step_1_get_content(state: ImportGraphState) -> Tuple[str, Path, Path]:
     if not state["md_content"]:
         # 没有在读取，有，正面是pdf节点解析过来的，已经给md_content进行赋值了
         with open(md_file_path, "r", encoding="utf-8") as f:
-            md_content = f.read()
-        state["md_content"] = md_content
+            state["md_content"] = f.read()
     # 图片文件夹obj
     # 注意： 如果自己传如的md -> 你的图片文件夹也必须叫images
     images_dir_obj = md_path_obj.parent / "images"
-    return md_content, md_path_obj, images_dir_obj
+    return state["md_content"], md_path_obj, images_dir_obj
 
 
 def find_image_in_md_content(md_content, image_file, context_length: int = 100):
