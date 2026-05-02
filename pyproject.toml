@@ -28,4 +28,6 @@ dependencies = [
     "torchvision>=0.26.0",
     "uvicorn>=0.45.0",
     "transformers",
+    "openai-agents>=0.4.2",
+    "requests>=2.33.1",
 ]

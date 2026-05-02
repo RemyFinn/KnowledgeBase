@@ -15,9 +15,9 @@ from app.core.logger import logger  # 项目统一日志工具，核心替换pri
 
 # --- 配置参数 (Configuration) ---
 # 单个Chunk最大字符长度：超过则触发二次切分（适配大模型上下文窗口）
-DEFAULT_MAX_CONTENT_LENGTH = 2000  # 512 - 1500 token
+DEFAULT_MAX_CONTENT_LENGTH = 2000 # 512 - 1500 token
 # 短Chunk合并阈值：同父标题的短Chunk会被合并，减少碎片化
-MIN_CONTENT_LENGTH = 500  # 最小的长度
+MIN_CONTENT_LENGTH = 500 # 最小的长度
 """
    完成md内容的切块！ 
    最终： chunks -> 存储块的集合   chunks ->  备份到本地 -> chunks.json 
@@ -44,8 +44,8 @@ def step_1_get_content(state):
         老mac   \r
     """
     md_content = md_content.replace('\r\n', '\n').replace('\r', '\n')
-    file_title = state.get("file_title", "default_file")
-    return md_content, file_title
+    file_title = state.get("file_title","default_file")
+    return md_content,file_title
 
 
 def step_2_split_by_title(md_content, file_title):
@@ -60,9 +60,9 @@ def step_2_split_by_title(md_content, file_title):
     """
     md -> ##  # - ######[空格]标题名称
     md -> 考虑代码块，代码块中有注释！ # 
-
+    
     什么时候会创建 -》 {content,title,file_title} -》 1. 你是标题 # （正则） 2. 不能是代码块
-
+    
     ## 开篇
     内容 \n
     ![]()
@@ -71,12 +71,12 @@ def step_2_split_by_title(md_content, file_title):
        # 注释
        python 
     内容 \n
-
+    
     ## 中篇
     内容 \n
     xxxxx
     内容 \n
-
+    
     ##  下篇
     内容 \n
     内容 \n 
@@ -94,7 +94,7 @@ def step_2_split_by_title(md_content, file_title):
     # 1.3 定义临时存储变量  current_title = str | current_lines = [] | title_count = 0 存储了多少块
     #                    is_code_block = bool False 是不是代码块
     current_title = ""
-    current_lines = []  # 当前标题行
+    current_lines = [] #当前标题行
     title_count = 0
     is_code_block = False
     # 1.4 最终存储的列表  sections = []
@@ -112,22 +112,22 @@ def step_2_split_by_title(md_content, file_title):
             current_lines.append(line)
             continue
         # 2.2 判断是不是标题
-        is_title = (not is_code_block) and re.match(title_pattern, strip_line)  # 是不是标题 【还用不用考虑代码块问题】
+        is_title = (not is_code_block) and re.match(title_pattern, strip_line)  #是不是标题 【还用不用考虑代码块问题】
 
         if is_title:
             # 先检查（是不是第一次）只要不是第一次，就应该先存储
             # 如果不想要空标题  current不为空 and  current_lines 长度大于1
             if current_title:
                 sections.append({
-                    "title": current_title,
+                    "title":current_title,
                     "content": "\n".join(current_lines),
-                    "file_title": file_title
+                    "file_title":file_title
                 })
             # 如果是标题 可能1  2  3 4 5 6 7 8
             # 2.3 是标题怎么处理
-            current_title = strip_line  # 标题名称
+            current_title = strip_line # 标题名称
             current_lines = [current_title]
-            title_count += 1  # 标题数量+1
+            title_count += 1 # 标题数量+1
         else:
             # 2.4 不是标题怎么处理
             current_lines.append(line)
@@ -141,7 +141,7 @@ def step_2_split_by_title(md_content, file_title):
         })
     # 3. 返回结果 sections
     logger.info(f"已经完成chunks的语义粗切！识别chunk数量：{title_count},切片内容:{sections}")
-    return sections, title_count, len(lines)
+    return sections,title_count,len(lines)
 
 
 def split_long_section(section, max_length):
@@ -155,14 +155,14 @@ def split_long_section(section, max_length):
         return [section]
     # 3. 超长了，进行二次切割即可
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=max_length,  # 切割每块的最大长度！ 永远不可能大于这个值！！ 500
-        chunk_overlap=100,  # 下次的重叠长度 900   0-500 400-900
-        separators=['\n\n', '\n', '。', '！', "；", " "]  # 切割的符号（什么节点切割）
+        chunk_size=max_length, #切割每块的最大长度！ 永远不可能大于这个值！！ 500
+        chunk_overlap=100, #下次的重叠长度 900   0-500 400-900
+        separators=['\n\n', '\n', '。', '！',"；"," "] #切割的符号（什么节点切割）
     )
     # title = 标题名  _1 _2 _3 || part 1  2 3   || parent_title = section.title
     sub_sections = []
-    for index, chunk in enumerate(splitter.split_text(content), start=1):
-        text = chunk.strip()  # 切片的内容
+    for index,chunk in enumerate(splitter.split_text(content),start = 1):
+        text = chunk.strip() # 切片的内容
         title = f"{section.get('title')}_{index}"
         parent_title = section.get("title")
         part = index
@@ -189,8 +189,8 @@ def merge_short_sections(final_sections, min_length):
     :param min_length:
     :return:
     """
-    merged_sections = []  # 存储合并结果
-    pre_section = None  # 当前处理的块 [指向合并入的块！ 第一个指针！他可能不动]
+    merged_sections = [] #存储合并结果
+    pre_section = None # 当前处理的块 [指向合并入的块！ 第一个指针！他可能不动]
     for section in final_sections:
         # section 除了第一次，是第二个指针
         if pre_section is None:
@@ -199,23 +199,21 @@ def merge_short_sections(final_sections, min_length):
         # 1 (pre_section)-> 2 【判断他的长度 小于 最小值 且 1 2是同一个parent_title】 -> 3 (第二次来)-> 4 -> [5]
         is_pre_short = len(pre_section.get("content")) < min_length
         # 考虑：没有切割过！ 所以。所有的parent_title = None 这时候 == True
-        is_same_parent_title = pre_section.get("parent_title") and (
-                    pre_section.get("parent_title") == section.get("parent_title"))
+        is_same_parent_title = pre_section.get("parent_title") and (pre_section.get("parent_title") == section.get("parent_title"))
         if is_pre_short and is_same_parent_title:
-            # 又短 又是同一个parent （合并）
-            pre_section["content"] += "\n\n" + section.get("content")
-            pre_section['part'] = section.get("part")  # 1 <- 2
+           # 又短 又是同一个parent （合并）
+          pre_section["content"] += "\n\n" + section.get("content")
+          pre_section['part'] = section.get("part")  # 1 <- 2
         else:
-            # 不短 或者 不是同一个parent (不合并)
-            merged_sections.append(pre_section)
-            pre_section = section
+           # 不短 或者 不是同一个parent (不合并)
+           merged_sections.append(pre_section)
+           pre_section = section
     if pre_section is not None:
         merged_sections.append(pre_section)
 
     return merged_sections
 
-
-def step_3_refine_chunks(sections, max_length, min_length):
+def step_3_refine_chunks(sections, max_length,min_length):
     """
     做内容精细切割！
        1. 超过了MIN_CONTENT_LENGTH块，要做切割！ （parent_title | part ）
@@ -224,16 +222,16 @@ def step_3_refine_chunks(sections, max_length, min_length):
     :param MIN_CONTENT_LENGTH:
     :return: sections
     """
-    final_sections = []  # 存储处理后的块
+    final_sections = [] # 存储处理后的块
     # 超过的先切碎
     for section in sections:
         # section 每个切块  title content file_title
         # [{title content file_title,parent_title,part},{},{}]
-        sub_section = split_long_section(section, max_length)
+        sub_section = split_long_section(section,max_length)
         # 不行 [{}]
         final_sections.extend(sub_section)
     # 小于的再合并
-    final_sections = merge_short_sections(final_sections, min_length)
+    final_sections = merge_short_sections(final_sections,min_length)
     # 补全属性和参数 part parent_title -> 向量数据库 -》 报错 （split_long_section）
     for section in final_sections:
         section['part'] = section.get('part') or 1
@@ -251,11 +249,11 @@ def step_4_backup_chunks(state, sections):
     """
     local_dir = state.get("local_dir")
     backup_file_path = os.path.join(local_dir, "chunks.json")
-    with open(backup_file_path, "w", encoding="utf-8") as f:
+    with open(backup_file_path, "w",encoding="utf-8") as f:
         json.dump(
-            sections,  # 将什么数据写到指定的文件流！
-            f,  # 写出的位置
-            ensure_ascii=False,  # 中文直接原文存储
+            sections,  #将什么数据写到指定的文件流！
+            f, # 写出的位置
+            ensure_ascii=False, #中文直接原文存储
             indent=4  # json带有缩进 4
         )
     logger.info(f"已经将内容,进行备份到:{backup_file_path}")
@@ -276,20 +274,20 @@ def node_document_split(state: ImportGraphState) -> ImportGraphState:
     add_running_task(state['task_id'], function_name)
     try:
         # 1. 参数校验 （材料是否完整）
-        md_content, file_title = step_1_get_content(state)
+        md_content,file_title = step_1_get_content(state)
         # 2. 粗粒度切割（md）语义完善 -》 使用标题切割  （保证语义）
         # [{content:标题的内容,title：标题,file_title：文件名},{},{}]
-        sections, title_count, lines_count = step_2_split_by_title(md_content, file_title)
+        sections,title_count,lines_count =  step_2_split_by_title(md_content,file_title)
         # 3. 特殊场景，一个文档没有标题，我们给他一个默认标题 （兜底 文档 -》 没有标题 ）
         if title_count == 0:
             # 证明没有标题
-            sections = [{"title": "没有主题", "content": md_content, "file_title": file_title}]
+            sections = [{"title":"没有主题","content":md_content,"file_title":file_title}]
         # 4. 细粒度切割（md）大小和重叠合适 -> 大 -》（设置重叠） 小 || 小 -》 合并  （大 -》 小 || 小 -》 合并）
-        sections = step_3_refine_chunks(sections, DEFAULT_MAX_CONTENT_LENGTH, MIN_CONTENT_LENGTH)
+        sections = step_3_refine_chunks(sections,DEFAULT_MAX_CONTENT_LENGTH,MIN_CONTENT_LENGTH)
         # 大小合适，语义完整的chunks
         # 5. 数据的备份和chunks属性的修改 (chunks -> state  | chunks -> 本地备份一下)
         state['chunks'] = sections
-        step_4_backup_chunks(state, sections)
+        step_4_backup_chunks(state,sections)
     except Exception as e:
         # 处理异常
         logger.error(f">>> [{function_name}]使用minerU解析发生了异常，异常信息：{e}")
@@ -330,7 +328,7 @@ if __name__ == '__main__':
             "task_id": "test_task_123456",
             "md_content": "",
             "file_title": "hak180产品安全手册",
-            "local_dir": os.path.join(PROJECT_ROOT, "output"),
+            "local_dir":os.path.join(PROJECT_ROOT, "output"),
         }
         logger.info("开始本地测试 - MD图片处理全流程")
         # 执行核心处理流程

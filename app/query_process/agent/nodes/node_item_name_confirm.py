@@ -318,8 +318,8 @@ if __name__ == "__main__":
         result_state = node_item_name_confirm(mock_state)
 
         print("\n>>> 测试完成！最终状态:")
+        # 遇到不认识的对象，直接把它转成字符串输出！
         print(json.dumps(result_state, indent=2, ensure_ascii=False,default=str))
-
         # 简单验证
         if result_state.get("item_names"):
             print(f"\n[PASS] 成功提取并确认商品名: {result_state['item_names']}")

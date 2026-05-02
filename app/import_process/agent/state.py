@@ -28,7 +28,7 @@ class ImportGraphState(TypedDict):
     pdf_path: str         # PDF 文件路径 (如果输入是PDF)
     md_path: str          # Markdown 文件路径 (转换后或直接输入的)
     split_path: str       # 分块后的文件路径 【没用】
-    embeddings_path: str  # 向量数据库文件路径 【没用】
+    embeddings_path: str  # 向量数据库文件路径【没用】
 
     # --- 内容数据 ---
     md_content: str       # Markdown 的全文内容

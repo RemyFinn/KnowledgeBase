@@ -139,7 +139,7 @@ def create_hybrid_search_requests(dense_vector, sparse_vector, dense_params=None
         data=[dense_vector],
         anns_field="dense_vector",
         param=dense_params,
-        expr=expr,
+        expr=expr,  # expr 混合查询的查询条件 item_name (字段名) in [item_name,item_name,item_name]
         limit=limit
     )
 
@@ -173,6 +173,8 @@ def hybrid_search(client, collection_name, reqs, ranker_weights=(0.5, 0.5), norm
     try:
         # 初始化加权排名器：按权重融合稠密/稀疏向量的搜索结果
         # norm_score=True：先将两个向量评分归一化到0~1区间，再加权计算
+        # WeightedRanker = 混合检索的【分数加权融合器】
+        # 就是把 稠密向量 (Dense) 得分 + 稀疏向量 (Sparse) 得分 按你设定的比例合并成一个最终分数。
         rerank = WeightedRanker(ranker_weights[0], ranker_weights[1], norm_score=norm_score)
 
         # 默认返回字段：文档标识字段

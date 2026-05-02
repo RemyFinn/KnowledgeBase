@@ -77,6 +77,9 @@ async def sse_generator(session_id: str, request: Request):
 
             try:
                 # 使用 run_in_executor 避免阻塞 async 事件循环
+                # msg = await stream_queue.get(True,1.0)
+                #  await  stream_queue.get(True -> 阻塞,1.0 -》1秒 1秒1次)  ==  Asyncio.Queue
+                #  msg = await queue.get()
                 msg = await loop.run_in_executor(None, stream_queue.get, True, 1.0)
             except queue.Empty:
                 # print(f"[SSE] Queue empty for {session_id}, waiting...")

@@ -85,11 +85,10 @@ def step_3_delete_old_data(milvus_client, item_name):
     :param item_name:
     :return:
     """
-    milvus_client.load_collection(collection_name=CHUNKS_COLLECTION_NAME)
-
     milvus_client.delete(collection_name=CHUNKS_COLLECTION_NAME,
                          filter=f"item_name=='{item_name}'")
 
+    milvus_client.load_collection(collection_name=CHUNKS_COLLECTION_NAME)
 
 
 def step_4_insert_collections(milvus_client,chunks):
@@ -118,7 +117,7 @@ def node_import_milvus(state: ImportGraphState) -> ImportGraphState:
     为什么叫这个名字: 将处理好的向量数据写入 Milvus 数据库。
     未来要实现:
     1. 连接 Milvus。
-3    2. 根据 item_name 删除旧数据 (幂等性)。
+    2. 根据 item_name 删除旧数据 (幂等性)。
     3. 批量插入新的向量数据。
     """
     # 1. 进入的日志和任务状态的配置

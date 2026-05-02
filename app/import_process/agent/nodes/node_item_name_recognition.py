@@ -296,7 +296,7 @@ def test_node_item_name_recognition():
     测试前准备：
         1. 确保项目环境变量配置完成（MILVUS_URL/ITEM_NAME_COLLECTION等）
         2. 确保大模型、Milvus、BGE-M3服务均可正常访问
-        3. 确保prompt模板（item_name_recognition/product_recognition_system）已存在embedding_utils.py
+        3. 确保prompt模板（item_name_recognition/product_recognition_system）已存在
     使用方法：
         直接运行该函数：if __name__ == "__main__": test_node_item_name_recognition()
     """

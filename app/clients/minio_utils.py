@@ -9,55 +9,35 @@ from app.core.logger import logger
 
 # 配置参数导入到 .env
 # 本次要获取minio的客户端，并且创建好桶和设置桶的访问权限（备用）
+#1. 相当于你登录了minio
+minio_client = Minio(
+    # 端点
+    endpoint=minio_config.endpoint,
+    # 账号
+    access_key=minio_config.access_key,
+    # 密码
+    secret_key=minio_config.secret_key,
+    secure=False # 使用http协议  True https协议
+)
 
-# 全局MinIO客户端对象，初始化后供全项目调用
-minio_client = None
+# 2. 创建一个桶
+# 没有才创建桶
+bucket_name = minio_config.bucket_name
 
-try:
-    # 初始化MinIO客户端实例  1. 相当于登陆了minio
-    minio_client = Minio(
-        # 端点
-        endpoint=minio_config.endpoint,
-        # 账号
-        access_key=minio_config.access_key,
-        # 密码
-        secret_key=minio_config.secret_key,
-        secure=False  # 内网/本地部署用HTTP，公网部署需改为True并配置SSL
-    )
-
-    # 2. 创建一个桶  检查存储桶是否存在，不存在则自动创建
-    bucket_name = minio_config.bucket_name
-
-    if not minio_client.bucket_exists(bucket_name):
-        logger.info(f"MinIO存储桶[{bucket_name}]不存在，开始创建")
-        minio_client.make_bucket(bucket_name)
-        logger.info(f"MinIO存储桶[{bucket_name}]创建成功")
-    else:
-        logger.info(f"MinIO存储桶[{bucket_name}]已存在，无需重复创建")
-
-    # 配置存储桶公网只读策略：允许匿名用户通过URL直接访问桶内文件
+if not minio_client.bucket_exists(bucket_name):
+    # 不存在桶，创建，并设置访问权限
+    minio_client.make_bucket(bucket_name)
+    # 设置桶的访问权限
     bucket_policy = {
         "Version": "2012-10-17",
         "Statement": [{
             "Effect": "Allow",
             "Principal": {"AWS": ["*"]},  # *表示所有匿名用户（S3兼容标识）
-            "Action": ["s3:GetObject"],   # 仅授权文件获取/访问操作
+            "Action": ["s3:GetObject"],  # 仅授权文件获取/访问操作
             "Resource": [f"arn:aws:s3:::{bucket_name}/*"]
         }]
     }
-    # 设置桶的访问权限
-    minio_client.set_bucket_policy(bucket_name, json.dumps(bucket_policy))
-    logger.info(f"MinIO存储桶[{bucket_name}]已配置公网只读策略，支持匿名URL访问")
-
-except Exception as e:
-    # 捕获初始化异常，记录错误日志并置空客户端
-    logger.error(f"MinIO客户端初始化失败，错误信息：{str(e)}", exc_info=True)
-    minio_client = None
-
+    minio_client.set_bucket_policy(bucket_name,json.dumps(bucket_policy))
 
 def get_minio_client():
-    """
-    获取全局初始化的MinIO客户端实例
-    :return: 已初始化的Minio对象 / None（初始化失败时）
-    """
     return minio_client

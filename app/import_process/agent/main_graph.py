@@ -1,6 +1,7 @@
-# 定义状图和编译对象
-
+# 定义状态图和编译对象
 # 加载环境变量：从 .env 文件读取配置（如Milvus地址、KG服务地址、BGE模型路径等）
+import traceback
+
 from dotenv import load_dotenv
 # 导入LangGraph核心依赖：StateGraph(状态图)、START/END(内置起始/结束节点常量)
 from langgraph.graph import StateGraph, END, START
@@ -21,64 +22,61 @@ from app.import_process.agent.nodes.node_import_milvus import node_import_milvus
 # 初始化环境变量：必须在配置读取前执行，确保后续节点能获取到环境变量中的配置信息
 load_dotenv()
 
-
-# 1.创建初始化Langgraph状态图
+# 1. 初始化Langgraph状态图
 workflow = StateGraph(ImportGraphState)
+# 2. 注册所有的子节点
+workflow.add_node("node_entry",node_entry)
+workflow.add_node("node_pdf_to_md",node_pdf_to_md)
+workflow.add_node("node_md_img",node_md_img)
+workflow.add_node("node_document_split",node_document_split)
+workflow.add_node("node_item_name_recognition",node_item_name_recognition)
+workflow.add_node("node_bge_embedding",node_bge_embedding)
+workflow.add_node("node_import_milvus",node_import_milvus)
 
-# 2.注释所有子节点
-workflow.add_node("node_entry", node_entry)
-workflow.add_node("node_pdf_to_md", node_pdf_to_md)
-workflow.add_node("node_md_img", node_md_img)
-workflow.add_node("node_document_split", node_document_split)
-workflow.add_node("node_item_name_recognition", node_item_name_recognition)
-workflow.add_node("node_bge_embedding", node_bge_embedding)
-workflow.add_node("node_import_milvus", node_import_milvus)
-
-# 3.设置入口节点
+# 3. 设置入口节点
 workflow.set_entry_point("node_entry")
 
-# 4.定义条件边的路由函数(state中的is_readxxxx)
+# 4. 定义条件边的路由函数(state = is_md_read_enabled: bool   # 是否启用 Markdown 读取路径
+#                             is_pdf_read_enabled: bool  # 是否启用 PDF 读取路径)
 def route_after_entry(state: ImportGraphState) -> str:
     """
-    根据文件类型判断第二个节点的路线
-    文件是pfg -> node_pdf_to_md
-    文件是md  -> node_md_img
-    如果都不是 -> END
-    :param state: is_md_read_enabled / is_pdf_read_enabled
-    :return: node_pdf_to_md / node_md_img / END
+    根据文件类型判定第二个节点的路线！
+        文件是pdf -> node_pdf_to_md
+        文件是md  -> node_md_img
+        既不是文件，又不是md  -> END
+    :param state: is_md_read_enabled is_pdf_read_enabled
+    :return:  node_pdf_to_md | node_md_img | END
     """
-    # 分支1：开启MD直接导入 → 跳过PDF转MD，直接执行MD图片处理
-    if state.get("is_md_read_enabled"):
-        return "node_md_img"
-    # 分支2：开启PDF导入 → 执行PDF转MD，再走后续流程
-    elif state.get("is_pdf_read_enabled"):
+    if state["is_pdf_read_enabled"]:
         return "node_pdf_to_md"
-    # 分支3：未开启任何导入配置 → 直接终止工作流（END是LangGraph内置结束常量）
+    elif state["is_md_read_enabled"]:
+        return "node_md_img"
     else:
         return END
 
 workflow.add_conditional_edges(
-    "node_entry",
-    route_after_entry,
-    # 标识 | 具体的节点名   标识 == 节点名
+         "node_entry",
+         route_after_entry,
     {
+        # 标识  | 具体的节点名  标识 == 节点名
         "node_pdf_to_md": "node_pdf_to_md",
         "node_md_img": "node_md_img",
         END: END
-    }
-)
+    })
 
-# 5.定义静态边
-workflow.add_edge("node_pdf_to_md", "node_md_img")  # PDF转MD完成 → MD图片处理
-workflow.add_edge("node_md_img", "node_document_split")  # MD处理完成 → 文档分块
-workflow.add_edge("node_document_split", "node_item_name_recognition")  # 分块完成 → 项目名识别
-workflow.add_edge("node_item_name_recognition", "node_bge_embedding")  # 项目名识别完成 → BGE向量化
-workflow.add_edge("node_bge_embedding", "node_import_milvus")  # 向量化完成 → 导入Milvus向量库
-workflow.add_edge("node_import_milvus", END)  # Milvus入库完成 → 工作流执行结束（END是内置结束节点）
+# 5. 定义静态边
+workflow.add_edge("node_pdf_to_md","node_md_img")
+workflow.add_edge("node_md_img","node_document_split")
+workflow.add_edge("node_document_split","node_item_name_recognition")
+workflow.add_edge("node_item_name_recognition","node_bge_embedding")
+workflow.add_edge("node_bge_embedding","node_import_milvus")
+workflow.add_edge("node_import_milvus",END)
 
-
-# 6.编译图节点对象即可生成状态图
+# 6. 编译图节点对象即可
 kb_import_app = workflow.compile()
+
+
+
 
 
 if __name__ == "__main__":
@@ -88,7 +86,7 @@ if __name__ == "__main__":
     # 全流程测试：验证PDF导入→Milvus入库→KG导入完整链路
     logger.info("===== 开始执行知识图谱导入全流程测试 =====")
     # 1. 构造测试文件路径（复用你项目的doc目录，和pdf2md测试文件一致）
-    test_pdf_name = os.path.join("doc", "万用表RS-12的使用.pdf")
+    test_pdf_name = os.path.join("doc", "hak180产品安全手册.pdf")
     test_pdf_path = os.path.join(PROJECT_ROOT, test_pdf_name)
     # 2. 构造输出目录（存放MD/图片等中间文件）
     test_output_dir = os.path.join(PROJECT_ROOT, "output")
@@ -142,8 +140,6 @@ if __name__ == "__main__":
                 logger.info(f"📂 最终状态包含的核心键：{list(final_state.keys())}")
                 logger.info("-" * 80)
         except Exception as e:
-            # 7. 异常捕获，打印详细错误信息
-            logger.error(f"===== 全流程测试运行失败 =====", exc_info=True)
-            logger.error(f"异常原因：{str(e)}")
-            # logger.exception("===== 全流程测试运行失败 =====")
+            #logger.error(f"===== 全流程测试运行失败 ===== 失败原因： {e}")
+            logger.exception("===== 全流程测试运行失败 =====")
     logger.info("===== 知识图谱导入全流程测试结束 =====")
